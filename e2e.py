@@ -52,12 +52,16 @@ def fill_valid(page, email=True, niche="food"):
     page.fill("#f-first", "سارا")
     page.fill("#f-last", "رضایی")
     page.fill("#f-business", "کافه نور")
-    page.click(f"label.chip:has(input[value={niche}])")
+    page.select_option("#f-niche", niche)
     page.fill("#f-city", "تبریز")
     page.fill("#f-phone", "09141234567")
     if email:
         page.fill("#f-email", "sara@example.com")
-    page.click(".sheet__title")          # blur the last field
+    blur(page)
+
+
+def blur(page):
+    page.evaluate("document.activeElement && document.activeElement.blur()")
 
 
 def invalid(page):
@@ -100,6 +104,26 @@ def lum(c):
 def ratio(a, b):
     la, lb = sorted((lum(a), lum(b)), reverse=True)
     return (la + 0.05) / (lb + 0.05)
+
+
+def e_centre(page):
+    """Where the e's own centre lands on screen, measured on pixels: every column of the logo box
+    that differs from the ground, up to the empty band that separates the e from its dot."""
+    box = page.evaluate("(() => { const r = document.querySelector('.hero__logo').getBoundingClientRect(); return {x: r.left, y: r.top, w: r.width, h: r.height}; })()")
+    img = Image.open(io.BytesIO(page.screenshot(clip={"x": box["x"], "y": box["y"], "width": box["w"], "height": box["h"]}))).convert("RGB")
+    ground = (11, 10, 12)
+    cols = [x for x in range(img.width) if sum(1 for y in range(0, img.height, 2)
+            if sum(abs(c - g) for c, g in zip(img.getpixel((x, y)), ground)) > 36) >= 3]
+    if not cols:
+        return None
+    runs, start = [], cols[0]
+    for a, b in zip(cols, cols[1:]):
+        if b - a > 3:
+            runs.append((start, a)); start = b
+    runs.append((start, cols[-1]))
+    left, right = runs[0]                                  # the widest-left run is the e
+    scale = img.width / box["w"]
+    return box["x"] + (left + right + 1) / 2 / scale
 
 
 def contrast_audit(page, selectors):
@@ -154,8 +178,10 @@ def main():
         check("body is set in YekanX first", fam.strip('"').startswith("YekanX"), fam)
         logo = page.evaluate("(() => { const i = document.querySelector('.hero__logo'); const r = i.getBoundingClientRect(); return {ok: i.complete && i.naturalWidth > 0, alt: i.alt, w: r.width, top: r.top}; })()")
         check("hero logo decoded, with alt text", logo["ok"] and logo["alt"] == "Went To Event", logo)
-        check("hero logo is big on a phone (≥ 300px of a 390px screen)", logo["w"] >= 300, logo["w"])
-        check("hero logo sits in the first screen", logo["top"] < 200, logo["top"])
+        check("the logo is modest on a phone (≤ 240px for the whole mark)", logo["w"] <= 240, logo["w"])
+        check("the logo sits in the first screen", logo["top"] < 200, logo["top"])
+        ec = e_centre(page)
+        check("the e itself is dead centre (pixel-measured, ±1.5px)", ec is not None and abs(ec - 195) <= 1.5, ec)
         og = page.evaluate("document.querySelector('meta[property=\"og:image\"]').content")
         check("og:image is an absolute URL", og.startswith("https://"), og)
         ogimg = Image.open(ROOT / "assets" / "og.jpg")
@@ -168,41 +194,46 @@ def main():
         check("no middle dot anywhere (it reads as ۰ beside Persian numerals)", "·" not in body_text)
         pal = page.evaluate("""[getComputedStyle(document.body).backgroundColor, getComputedStyle(document.body).color,
                               getComputedStyle(document.querySelector('.mark__dot')).fill]""")
-        check("palette: bone ground, ink type, the dot's orange", pal == ["rgb(244, 241, 236)", "rgb(11, 10, 12)", "rgb(254, 66, 34)"], pal)
+        check("palette: black ground, bone type, the dot's orange", pal == ["rgb(11, 10, 12)", "rgb(244, 241, 236)", "rgb(254, 66, 34)"], pal)
+        check("dark: the page declares color-scheme dark", page.evaluate("getComputedStyle(document.documentElement).colorScheme") == "dark")
 
         print("Form semantics")
-        labels = page.evaluate("""['f-first','f-last','f-business','f-city','f-phone','f-email','f-other'].map(id => {
+        labels = page.evaluate("""['f-first','f-last','f-business','f-niche','f-city','f-phone','f-email','f-other'].map(id => {
             const l = document.querySelector('label[for=' + id + ']'); return l ? l.textContent.trim() : ''; })""")
         check("every text field has a visible label", all(labels), labels)
         req = page.evaluate("['f-first','f-last','f-business','f-city','f-phone'].every(id => document.getElementById(id).required)")
         check("name, last name, business, city and phone are required", req)
-        check("niche is a required radio group", page.evaluate("document.querySelector('input[name=niche]').required"))
+        check("niche is one required native picker", page.evaluate("document.getElementById('f-niche').tagName === 'SELECT' && document.getElementById('f-niche').required"))
         check("email alone is optional", not page.evaluate("document.getElementById('f-email').required"))
         check("the optional one is labelled so", "اختیاری" in page.text_content("label[for=f-email]"))
-        check("11 niche options including 'other'", page.locator("input[name=niche]").count() == 11 and page.locator("input[name=niche][value=other]").count() == 1)
+        opts = page.evaluate("[...document.querySelectorAll('#f-niche option')].map(o => [o.value, o.disabled])")
+        check("11 niches plus a disabled prompt, 'other' included", len(opts) == 12 and opts[0] == ["", True] and ["other", False] in opts, opts)
+        cover = page.evaluate("""(() => { const s = document.getElementById('f-niche').getBoundingClientRect(), r = document.querySelector('[data-name=niche]').getBoundingClientRect();
+            return Math.abs(s.left - r.left) + Math.abs(s.right - r.right) + Math.abs(s.top - r.top) + Math.abs(s.bottom - r.bottom); })()""")
+        check("a tap anywhere on the niche row opens the picker (it covers the row)", cover < 2, cover)
         check("phone and email are typed left-to-right", page.get_attribute("#f-phone", "dir") == "ltr" and page.get_attribute("#f-email", "dir") == "ltr")
         check("email keeps Latin figures", "YekanX Latin" in page.evaluate("getComputedStyle(document.getElementById('f-email')).fontFamily"))
-        check("inputs are ≥ 16px (no iOS zoom on focus)", page.evaluate("[...document.querySelectorAll('.field input')].every(i => parseFloat(getComputedStyle(i).fontSize) >= 16)"))
+        check("inputs and picker are ≥ 16px (no iOS zoom on focus)", page.evaluate("[...document.querySelectorAll('.row input, .row select')].every(i => parseFloat(getComputedStyle(i).fontSize) >= 16)"))
         hp = page.evaluate("(() => { const r = document.getElementById('f-website').getBoundingClientRect(); return r.right < 0 || r.left > innerWidth || r.width <= 1; })()")
         check("the honeypot is out of sight and out of the tab order", hp and page.get_attribute("#f-website", "tabindex") == "-1")
-        small = page.evaluate("""[...document.querySelectorAll('.chip, .btn, .cap')].filter(e => e.offsetParent)
+        small = page.evaluate("""[...document.querySelectorAll('.row, .btn, .cap')].filter(e => e.offsetParent)
                                 .map(e => e.getBoundingClientRect()).filter(r => r.height < 44 || r.width < 44).length""")
         check("tap targets are at least 44×44", small == 0, small)
 
         print("Glass")
         bad = page.evaluate(GLASS_ANCESTORS)
         check("no glass sits under a backdrop root (transform, filter, opacity, blend)", not bad, "; ".join(bad[:4]))
-        bf = page.evaluate("['.sheet', '.cap--brand', '.cap--progress', '.kicker'].map(s => getComputedStyle(document.querySelector(s)).backdropFilter)")
-        check("sheet, capsules and kicker really blur what is behind them", all(v and v != "none" and "blur" in v for v in bf), bf)
+        bf = page.evaluate("['.cap--brand', '.cap--progress', '.edge'].map(s => getComputedStyle(document.querySelector(s)).backdropFilter)")
+        check("capsules and scroll edge really blur what is behind them", all(v and v != "none" and "blur" in v for v in bf), bf)
         check("floating bar is positioned without a transform",
               page.evaluate("getComputedStyle(document.querySelector('.bar')).transform") == "none")
-        n, fails = contrast_audit(page, [".hero__title", ".hero__lede", ".kicker"])
-        check(f"contrast, hero ({n} boxes, measured on pixels)", not fails and n >= 3, "; ".join(fails))
-        page.evaluate("document.getElementById('join').scrollIntoView({block: 'start'})"); page.wait_for_timeout(500)
-        n, fails = contrast_audit(page, [".sheet__title", ".sheet__note", ".group__title", ".field label", ".niche__label", ".chip span", ".cap__name", ".cap__text"])
-        check(f"contrast, top of the sheet over the orb ({n} boxes)", not fails and n >= 6, "; ".join(fails))
+        n, fails = contrast_audit(page, [".hero__title", ".hero__lede"])
+        check(f"contrast, hero ({n} boxes, measured on pixels)", not fails and n >= 2, "; ".join(fails))
+        page.evaluate("document.querySelector('.section').scrollIntoView({block: 'start'})"); page.wait_for_timeout(500)
+        n, fails = contrast_audit(page, [".section__head", ".row > label", ".cap__name", ".cap__text"])
+        check(f"contrast, top of the form ({n} boxes)", not fails and n >= 6, "; ".join(fails))
         page.evaluate("document.querySelector('.submit').scrollIntoView({block: 'center'})"); page.wait_for_timeout(500)
-        n, fails = contrast_audit(page, [".field label", ".group__title", ".fine", ".preview-flag", ".btn__label"])
+        n, fails = contrast_audit(page, [".row > label", ".section__head", ".section__foot", ".fine", ".preview-flag", ".btn__label"])
         check(f"contrast, foot of the sheet ({n} boxes)", not fails and n >= 3, "; ".join(fails))
         ctx.close()
 
@@ -213,15 +244,11 @@ def main():
             goto(page)
             over = page.evaluate("document.scrollingElement.scrollWidth - innerWidth")
             check(f"{w}px: no sideways scroll", over <= 0, over)
-            if w >= 1080:
-                geo = page.evaluate("""(() => { const h = document.querySelector('.hero').getBoundingClientRect(), s = document.getElementById('join').getBoundingClientRect(),
-                    l = document.querySelector('.hero__logo').getBoundingClientRect(); return {heroLeft: h.left, sheetRight: s.right, sheetTop: s.top, logoW: l.width}; })()""")
-                check(f"{w}px: brand on the right, form on the left, both in the first screen",
-                      geo["heroLeft"] >= geo["sheetRight"] - 1 and geo["sheetTop"] < h * .4, geo)
-                check(f"{w}px: logo at least 400px wide", geo["logoW"] >= 400, geo["logoW"])
-                page.mouse.wheel(0, 900); page.wait_for_timeout(600)
-                top = page.evaluate("document.querySelector('.hero').getBoundingClientRect().top")
-                check(f"{w}px: the brand column holds still while the form scrolls", abs(top) < 2, top)
+            geo = page.evaluate("""(() => { const j = document.getElementById('join').getBoundingClientRect(), l = document.querySelector('.hero__logo').getBoundingClientRect();
+                return {joinW: j.width, joinMid: j.left + j.width / 2, logoMid: l.left + l.width / 2, logoW: l.width}; })()""")
+            check(f"{w}px: one centred column, never wider than 560px", geo["joinW"] <= 560.5 and abs(geo["joinMid"] - w / 2) <= 1, geo)
+            ec = e_centre(page)
+            check(f"{w}px: the e is dead centre, the dot hangs right", ec is not None and abs(ec - w / 2) <= 1.5, (ec, w / 2))
             ctx.close()
 
         # ── Validation ────────────────────────────────────────────────────────
@@ -240,14 +267,14 @@ def main():
         check("nothing was sent", page.is_hidden("[data-view=done]"))
         page.type("#f-first", "سارا")
         check("an error clears as soon as it is fixed", "first_name" not in invalid(page))
-        page.fill("#f-last", "Rezaei2"); page.click(".sheet__title")
+        page.fill("#f-last", "Rezaei2"); blur(page)
         check("digits in a name are refused", "last_name" in invalid(page))
         page.fill("#f-last", "رضایی")
         check("…and accepted once gone", "last_name" not in invalid(page))
-        page.fill("#f-business", "ک"); page.click(".sheet__title")
+        page.fill("#f-business", "ک"); blur(page)
         check("a one-letter business name is refused", "business_name" in invalid(page))
         page.fill("#f-business", "کافه نور")
-        page.fill("#f-phone", "12345"); page.click(".sheet__title")
+        page.fill("#f-phone", "12345"); blur(page)
         check("a short number is refused", "phone" in invalid(page))
         msg = page.text_content("#phone-msg")
         check("the phone example is bidi-isolated (reads 0912 345 6789, not reversed)", LRI in msg and PDI in msg, repr(msg))
@@ -257,35 +284,35 @@ def main():
         check("…and the number is accepted", "phone" not in invalid(page))
         for raw, ok in [("+98 912 345 6789", True), ("00989123456789", True), ("9123456789", True), ("021 8877 6655", True),
                         ("+971 50 123 4567", True), ("0912 345 678", False), ("+12", False)]:
-            page.fill("#f-phone", raw); page.click(".sheet__title")
+            page.fill("#f-phone", raw); blur(page)
             check(f"phone {raw!r} {'accepted' if ok else 'refused'}", ("phone" not in invalid(page)) == ok, invalid(page))
-        page.fill("#f-phone", "09141234567"); page.click(".sheet__title")
+        page.fill("#f-phone", "09141234567"); blur(page)
         check("a valid number is shown grouped on leaving the field", page.input_value("#f-phone") == "0914 123 4567", page.input_value("#f-phone"))
-        page.fill("#f-email", "sara@"); page.click(".sheet__title")
+        page.fill("#f-email", "sara@"); blur(page)
         check("a broken email is refused", "email" in invalid(page))
-        page.fill("#f-email", ""); page.click(".sheet__title")
+        page.fill("#f-email", ""); blur(page)
         check("an empty email is fine", "email" not in invalid(page))
-        page.fill("#f-email", "sara@gmial.com"); page.click(".sheet__title")
+        page.fill("#f-email", "sara@gmial.com"); blur(page)
         hint = page.evaluate("document.getElementById('email-hint').hidden ? '' : document.getElementById('email-hint').textContent")
         check("a mistyped domain is questioned", "sara@gmail.com" in hint, hint)
         page.click("#email-hint button")
         check("…and fixed in one tap", page.input_value("#f-email") == "sara@gmail.com")
-        page.fill("#f-city", "12"); page.click(".sheet__title")
+        page.fill("#f-city", "12"); blur(page)
         check("a number is not a city", "city" in invalid(page))
         page.fill("#f-city", "")
 
         print("Niche")
+        check("the picker starts empty and says so", page.input_value("#f-niche") == "" and page.text_content("[data-niche-value]") == "انتخاب کنید")
         check("'other' has no field until chosen", page.is_hidden("#f-other"))
-        page.click("label.chip:has(input[value=other])"); page.wait_for_timeout(450)
-        check("choosing 'other' opens a field for it", page.is_visible("#f-other"))
+        page.select_option("#f-niche", "other"); page.wait_for_timeout(450)
+        check("choosing 'other' opens a row for it", page.is_visible("#f-other"))
         check("…focuses it", page.evaluate("document.activeElement.id") == "f-other")
         check("…and makes it required", page.evaluate("document.getElementById('f-other').required"))
-        page.click("label.chip:has(input[value=music])"); page.wait_for_timeout(450)
+        page.select_option("#f-niche", "music"); page.wait_for_timeout(450)
         check("choosing another niche puts it away again", page.is_hidden("#f-other") and not page.evaluate("document.getElementById('f-other').required"))
-        on = page.evaluate("[...document.querySelectorAll('.chip.is-on')].map(c => c.querySelector('input').value)")
-        check("exactly one tile reads as chosen", on == ["music"], on)
-        chosen_bg = page.evaluate("getComputedStyle(document.querySelector('.chip.is-on')).backgroundImage")
-        check("the chosen tile is Ink", "rgb(11, 10, 12)" in chosen_bg, chosen_bg)
+        check("the row shows the choice in Bone", page.text_content("[data-niche-value]") == "موسیقی و کنسرت"
+              and page.evaluate("getComputedStyle(document.querySelector('[data-niche-value]')).color") == "rgb(244, 241, 236)")
+        check("a choice clears the niche error", "niche" not in invalid(page))
 
         print("City")
         page.click("#f-city"); page.wait_for_timeout(150)
@@ -305,7 +332,7 @@ def main():
         check("a tapped suggestion fills the field", page.input_value("#f-city") == "شیراز")
         check("…and hides the list", page.is_hidden("#city-suggest"))
         check("…and moves on to the next empty field", page.evaluate("document.activeElement.id") in ("f-phone", "f-city"))
-        page.fill("#f-city", "دبی"); page.click(".sheet__title")
+        page.fill("#f-city", "دبی"); blur(page)
         check("a city outside the list is still accepted", "city" not in invalid(page))
         ctx.close()
 
@@ -317,11 +344,9 @@ def main():
         page.keyboard.type("رضایی"); page.keyboard.press("Enter")
         check("…then to business name", page.evaluate("document.activeElement.id") == "f-business")
         page.keyboard.type("کافه نور"); page.keyboard.press("Enter")
-        check("…then to the niche tiles", page.evaluate("document.activeElement.name") == "niche")
-        page.keyboard.press("ArrowLeft")
-        check("arrow keys choose a tile", page.evaluate("!!document.querySelector('input[name=niche]:checked')"))
-        ring = page.evaluate("getComputedStyle(document.querySelector('.chip:has(input:focus-visible)')).outlineColor")
-        check("keyboard focus shows the orange ring", ring == "rgb(254, 66, 34)", ring)
+        check("…then to the niche picker", page.evaluate("document.activeElement.id") == "f-niche")
+        ring = page.evaluate("getComputedStyle(document.querySelector('[data-name=niche]')).boxShadow")
+        check("keyboard focus on the picker shows the orange ring", "rgb(254, 66, 34)" in ring, ring)
         page.focus("#f-phone"); page.keyboard.type("09123456789"); page.keyboard.press("Enter")
         check("Enter in phone moves to email", page.evaluate("document.activeElement.id") == "f-email")
         ctx.close()
@@ -343,7 +368,7 @@ def main():
         page.reload(wait_until="networkidle"); page.wait_for_function("window.__wte && window.__wte.ready")
         kept = page.evaluate("['f-first','f-business','f-city','f-phone'].map(id => document.getElementById(id).value)")
         check("a reload keeps what was typed", kept == ["سارا", "کافه نور", "تبریز", "0914 123 4567"], kept)
-        check("…including the chosen niche", page.evaluate("document.querySelector('input[name=niche]:checked')?.value") == "food")
+        check("…including the chosen niche", page.input_value("#f-niche") == "food" and page.text_content("[data-niche-value]") == "کافه و رستوران")
 
         print("Send (preview)")
         page.click("[data-submit]")
@@ -362,7 +387,7 @@ def main():
         again = page.evaluate("['f-first','f-last','f-phone','f-business','f-city'].map(id => document.getElementById(id).value)")
         check("'another business' keeps the person, clears the business", again == ["سارا", "رضایی", "0914 123 4567", "", ""], again)
         check("…and starts at the business name", page.evaluate("document.activeElement.id") == "f-business")
-        check("…with no niche chosen", not page.evaluate("!!document.querySelector('input[name=niche]:checked')"))
+        check("…with no niche chosen", page.input_value("#f-niche") == "" and page.text_content("[data-niche-value]") == "انتخاب کنید")
         ctx.close()
 
         ctx, page = fresh(browser)
@@ -450,8 +475,8 @@ def main():
         print("Motion")
         ctx, page = fresh(browser, reduced_motion="reduce")
         goto(page)
-        anim = page.evaluate("['.sheet', '.hero__logo', '.orb i'].map(s => getComputedStyle(document.querySelector(s)).animationName)")
-        check("reduced motion: nothing arrives or breathes", all(a == "none" for a in anim), anim)
+        anim = page.evaluate("['.join', '.hero__logo', '.hero__title'].map(s => getComputedStyle(document.querySelector(s)).animationName)")
+        check("reduced motion: nothing moves on arrival", all(a == "none" for a in anim), anim)
         ctx.close()
 
         if SHOTS:
@@ -460,10 +485,10 @@ def main():
             ctx, page = fresh(browser, 390, 844, True)
             goto(page)
             page.screenshot(path=str(out / "phone-1-hero.png"))
-            page.evaluate("document.getElementById('join').scrollIntoView({block: 'start'})"); page.wait_for_timeout(600)
+            page.evaluate("document.querySelector('.section').scrollIntoView({block: 'start'})"); page.wait_for_timeout(600)
             page.screenshot(path=str(out / "phone-2-form.png"))
             fill_valid(page)
-            page.evaluate("document.querySelector('[data-name=niche]').scrollIntoView({block: 'start'})"); page.wait_for_timeout(600)
+            page.evaluate("document.querySelector('[data-name=business_name]').scrollIntoView({block: 'start'})"); page.wait_for_timeout(600)
             page.screenshot(path=str(out / "phone-3-filled.png"))
             page.click("[data-submit]"); page.wait_for_selector("[data-view=done]:not([hidden])"); page.wait_for_timeout(1200)
             page.screenshot(path=str(out / "phone-4-done.png"))

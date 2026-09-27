@@ -32,7 +32,8 @@
     first_name: $('#f-first'), last_name: $('#f-last'), business_name: $('#f-business'),
     niche_other: $('#f-other'), city: $('#f-city'), phone: $('#f-phone'), email: $('#f-email'),
   };
-  const radios = $$('input[name="niche"]');
+  const nicheSel = $('#f-niche');
+  const nicheShown = $('[data-niche-value]');
   const REQUIRED = ['first_name', 'last_name', 'business_name', 'niche', 'city', 'phone'];
   const ORDER = ['first_name', 'last_name', 'business_name', 'niche', 'niche_other', 'city', 'phone', 'email'];
   const RING = 2 * Math.PI * 9.5;
@@ -115,7 +116,7 @@
   // ── Rules ─────────────────────────────────────────────────────────────────
   const LETTERS = /^[\p{L}\p{M}\s\u200c'’.\-]+$/u;
   const countLetters = (s) => (s.match(/\p{L}/gu) || []).length;
-  const nicheValue = () => (radios.find((r) => r.checked) || {}).value || '';
+  const nicheValue = () => nicheSel.value || '';
 
   const rules = {
     first_name(v) {
@@ -170,8 +171,7 @@
     const bad = !!message;
     cell.classList.toggle('is-invalid', bad);
     if (msg.textContent !== message) msg.textContent = message;
-    if (name === 'niche') radios.forEach((r) => r.setAttribute('aria-invalid', String(bad)));
-    else inputs[name].setAttribute('aria-invalid', String(bad));
+    (name === 'niche' ? nicheSel : inputs[name]).setAttribute('aria-invalid', String(bad));
   }
 
   function check(name, reveal) {
@@ -212,10 +212,9 @@
   }
 
   function focusField(name, { center = true } = {}) {
-    const el = name === 'niche' ? (radios.find((r) => r.checked) || radios[0]) : inputs[name];
-    const target = name === 'niche' ? cellOf('niche') : cellOf(name);
+    const el = name === 'niche' ? nicheSel : inputs[name];
     el.focus({ preventScroll: true });
-    target.scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: center ? 'center' : 'nearest' });
+    cellOf(name).scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: center ? 'center' : 'nearest' });
   }
 
   progressBtn.addEventListener('click', () => {
@@ -245,15 +244,16 @@
     const d = store.get();
     if (!d || typeof d !== 'object') return;
     Object.keys(inputs).forEach((k) => { if (typeof d[k] === 'string') inputs[k].value = d[k].slice(0, inputs[k].maxLength > 0 ? inputs[k].maxLength : 200); });
-    const r = radios.find((x) => x.value === d.niche);
-    if (r) r.checked = true;
-    syncChips(false);
+    if (typeof d.niche === 'string' && NICHES[d.niche]) nicheSel.value = d.niche;
+    syncNiche(false);
   }
 
-  // ── Niche chips ───────────────────────────────────────────────────────────
-  function syncChips(animate = true) {
-    radios.forEach((r) => r.closest('.chip').classList.toggle('is-on', r.checked));
-    const isOther = nicheValue() === 'other';
+  // ── Niche: one native picker; the row shows its value ─────────────────────
+  function syncNiche(animate = true) {
+    const v = nicheValue();
+    nicheShown.textContent = v ? NICHES[v] : 'انتخاب کنید';
+    nicheShown.classList.toggle('is-empty', !v);
+    const isOther = v === 'other';
     if (isOther && otherWrap.hidden) {
       otherWrap.hidden = false;
       if (animate && !reduce.matches) { void otherWrap.offsetHeight; }
@@ -267,12 +267,14 @@
       if (reduce.matches || !animate) hide(); else setTimeout(hide, 330);
     }
   }
-  radios.forEach((r) => r.addEventListener('change', () => {
-    syncChips();
-    check('niche', attempted || shown.has('niche'));
-    if (r.value === 'other' && r.checked) setTimeout(() => inputs.niche_other.focus({ preventScroll: false }), reduce.matches ? 0 : 120);
+  nicheSel.addEventListener('change', () => {
+    syncNiche();
+    check('niche', true);                                  // a choice was made: show its verdict
+    hideAlert();
+    if (nicheValue() === 'other') setTimeout(() => inputs.niche_other.focus({ preventScroll: false }), reduce.matches ? 0 : 140);
     progress(); saveDraft();
-  }));
+  });
+  nicheSel.addEventListener('blur', () => { if (attempted) check('niche', true); });
 
   // ── City suggestions ──────────────────────────────────────────────────────
   function cityMatches(q) {
@@ -297,7 +299,6 @@
       b.type = 'button';
       b.dataset.city = c;
       b.setAttribute('aria-label', `انتخاب ${c}`);
-      b.innerHTML = '<svg aria-hidden="true"><use href="#i-pin"/></svg>';
       b.append(c);
       suggestBox.append(b);
     }
@@ -537,8 +538,8 @@
   // Another business, same person: keep who they are and how to reach them.
   $('[data-again]').addEventListener('click', () => {
     ['business_name', 'niche_other', 'city'].forEach((k) => { inputs[k].value = ''; });
-    radios.forEach((r) => { r.checked = false; });
-    syncChips(false);
+    nicheSel.selectedIndex = 0;
+    syncNiche(false);
     shown.clear(); attempted = false;
     ['first_name', 'last_name', 'business_name', 'niche', 'niche_other', 'city', 'phone', 'email'].forEach((n) => paint(n, ''));
     viewDone.hidden = true;
