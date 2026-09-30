@@ -48,11 +48,11 @@ def goto(page, suffix=""):
     page.wait_for_timeout(1300)          # arrival animations finish; fill-mode backwards leaves nothing behind
 
 
-def fill_valid(page, email=True, niche="food"):
+def fill_valid(page, email=True, niche="کافه و رستوران"):
     page.fill("#f-first", "سارا")
     page.fill("#f-last", "رضایی")
     page.fill("#f-business", "کافه نور")
-    page.select_option("#f-niche", niche)
+    page.fill("#f-niche", niche)
     page.fill("#f-city", "تبریز")
     page.fill("#f-phone", "09141234567")
     if email:
@@ -198,22 +198,20 @@ def main():
         check("dark: the page declares color-scheme dark", page.evaluate("getComputedStyle(document.documentElement).colorScheme") == "dark")
 
         print("Form semantics")
-        labels = page.evaluate("""['f-first','f-last','f-business','f-niche','f-city','f-phone','f-email','f-other'].map(id => {
+        labels = page.evaluate("""['f-first','f-last','f-business','f-niche','f-city','f-phone','f-email'].map(id => {
             const l = document.querySelector('label[for=' + id + ']'); return l ? l.textContent.trim() : ''; })""")
         check("every text field has a visible label", all(labels), labels)
         req = page.evaluate("['f-first','f-last','f-business','f-city','f-phone'].every(id => document.getElementById(id).required)")
         check("name, last name, business, city and phone are required", req)
-        check("niche is one required native picker", page.evaluate("document.getElementById('f-niche').tagName === 'SELECT' && document.getElementById('f-niche').required"))
+        niche = page.evaluate("(() => { const n = document.getElementById('f-niche'); return {tag: n.tagName, type: n.type, required: n.required, list: n.getAttribute('list'), auto: n.getAttribute('autocomplete')}; })()")
+        check("niche is typed: a required text field", niche["tag"] == "INPUT" and niche["type"] == "text" and niche["required"], niche)
+        check("…with nothing to choose from (no list, no picker, no browser history)", niche["list"] is None and niche["auto"] == "off"
+              and page.evaluate("document.querySelectorAll('select, datalist, [role=listbox], [role=option]').length") == 0, niche)
         check("email alone is optional", not page.evaluate("document.getElementById('f-email').required"))
         check("the optional one is labelled so", "اختیاری" in page.text_content("label[for=f-email]"))
-        opts = page.evaluate("[...document.querySelectorAll('#f-niche option')].map(o => [o.value, o.disabled])")
-        check("11 niches plus a disabled prompt, 'other' included", len(opts) == 12 and opts[0] == ["", True] and ["other", False] in opts, opts)
-        cover = page.evaluate("""(() => { const s = document.getElementById('f-niche').getBoundingClientRect(), r = document.querySelector('[data-name=niche]').getBoundingClientRect();
-            return Math.abs(s.left - r.left) + Math.abs(s.right - r.right) + Math.abs(s.top - r.top) + Math.abs(s.bottom - r.bottom); })()""")
-        check("a tap anywhere on the niche row opens the picker (it covers the row)", cover < 2, cover)
         check("phone and email are typed left-to-right", page.get_attribute("#f-phone", "dir") == "ltr" and page.get_attribute("#f-email", "dir") == "ltr")
         check("email keeps Latin figures", "YekanX Latin" in page.evaluate("getComputedStyle(document.getElementById('f-email')).fontFamily"))
-        check("inputs and picker are ≥ 16px (no iOS zoom on focus)", page.evaluate("[...document.querySelectorAll('.row input, .row select')].every(i => parseFloat(getComputedStyle(i).fontSize) >= 16)"))
+        check("inputs are ≥ 16px (no iOS zoom on focus)", page.evaluate("[...document.querySelectorAll('.row input')].every(i => parseFloat(getComputedStyle(i).fontSize) >= 16)"))
         hp = page.evaluate("(() => { const r = document.getElementById('f-website').getBoundingClientRect(); return r.right < 0 || r.left > innerWidth || r.width <= 1; })()")
         check("the honeypot is out of sight and out of the tab order", hp and page.get_attribute("#f-website", "tabindex") == "-1")
         small = page.evaluate("""[...document.querySelectorAll('.row, .btn, .cap')].filter(e => e.offsetParent)
@@ -302,17 +300,17 @@ def main():
         page.fill("#f-city", "")
 
         print("Niche")
-        check("the picker starts empty and says so", page.input_value("#f-niche") == "" and page.text_content("[data-niche-value]") == "انتخاب کنید")
-        check("'other' has no field until chosen", page.is_hidden("#f-other"))
-        page.select_option("#f-niche", "other"); page.wait_for_timeout(450)
-        check("choosing 'other' opens a row for it", page.is_visible("#f-other"))
-        check("…focuses it", page.evaluate("document.activeElement.id") == "f-other")
-        check("…and makes it required", page.evaluate("document.getElementById('f-other').required"))
-        page.select_option("#f-niche", "music"); page.wait_for_timeout(450)
-        check("choosing another niche puts it away again", page.is_hidden("#f-other") and not page.evaluate("document.getElementById('f-other').required"))
-        check("the row shows the choice in Bone", page.text_content("[data-niche-value]") == "موسیقی و کنسرت"
-              and page.evaluate("getComputedStyle(document.querySelector('[data-niche-value]')).color") == "rgb(244, 241, 236)")
-        check("a choice clears the niche error", "niche" not in invalid(page))
+        check("niche starts empty, with an example to follow", page.input_value("#f-niche") == ""
+              and "مثلاً" in (page.get_attribute("#f-niche", "placeholder") or ""))
+        page.fill("#f-niche", "ک"); blur(page)
+        check("a one-letter niche is refused", "niche" in invalid(page))
+        page.fill("#f-niche", "باغ‌تالار")
+        check("…and accepted as soon as it is a word", "niche" not in invalid(page))
+        page.focus("#f-niche"); page.keyboard.type(" و تالار پذیرایی"); page.wait_for_timeout(200)
+        check("typing a niche offers nothing to pick", page.is_hidden("#city-suggest")
+              and page.evaluate("document.querySelectorAll('select, datalist, [role=listbox]').length") == 0)
+        page.fill("#f-niche", "  باغ‌تالار   و  تالار  "); blur(page)
+        check("what was typed is kept, only tidied", page.input_value("#f-niche") == "باغ‌تالار و تالار", page.input_value("#f-niche"))
 
         print("City")
         page.click("#f-city"); page.wait_for_timeout(150)
@@ -344,9 +342,9 @@ def main():
         page.keyboard.type("رضایی"); page.keyboard.press("Enter")
         check("…then to business name", page.evaluate("document.activeElement.id") == "f-business")
         page.keyboard.type("کافه نور"); page.keyboard.press("Enter")
-        check("…then to the niche picker", page.evaluate("document.activeElement.id") == "f-niche")
-        ring = page.evaluate("getComputedStyle(document.querySelector('[data-name=niche]')).boxShadow")
-        check("keyboard focus on the picker shows the orange ring", "rgb(254, 66, 34)" in ring, ring)
+        check("…then to the niche field", page.evaluate("document.activeElement.id") == "f-niche")
+        page.keyboard.type("کافه"); page.keyboard.press("Enter")
+        check("…then to city", page.evaluate("document.activeElement.id") == "f-city")
         page.focus("#f-phone"); page.keyboard.type("09123456789"); page.keyboard.press("Enter")
         check("Enter in phone moves to email", page.evaluate("document.activeElement.id") == "f-email")
         ctx.close()
@@ -368,7 +366,7 @@ def main():
         page.reload(wait_until="networkidle"); page.wait_for_function("window.__wte && window.__wte.ready")
         kept = page.evaluate("['f-first','f-business','f-city','f-phone'].map(id => document.getElementById(id).value)")
         check("a reload keeps what was typed", kept == ["سارا", "کافه نور", "تبریز", "0914 123 4567"], kept)
-        check("…including the chosen niche", page.input_value("#f-niche") == "food" and page.text_content("[data-niche-value]") == "کافه و رستوران")
+        check("…including the typed niche", page.input_value("#f-niche") == "کافه و رستوران")
 
         print("Send (preview)")
         page.click("[data-submit]")
@@ -382,12 +380,12 @@ def main():
         if demo:
             check("preview: the confirmation does not claim anything was sent", page.is_visible("[data-done-demo]") and "ثبت شد" not in page.text_content("#done-title"))
             check("preview: nothing left the page", any("nothing was sent" in m for m in page.infos), page.infos)
-        check("the draft is gone once sent", page.evaluate("localStorage.getItem('wte-join:draft:v1')") is None)
+        check("the draft is gone once sent", page.evaluate("localStorage.getItem('wte-join:draft:v2')") is None)
         page.click("[data-again]"); page.wait_for_timeout(500)
         again = page.evaluate("['f-first','f-last','f-phone','f-business','f-city'].map(id => document.getElementById(id).value)")
         check("'another business' keeps the person, clears the business", again == ["سارا", "رضایی", "0914 123 4567", "", ""], again)
         check("…and starts at the business name", page.evaluate("document.activeElement.id") == "f-business")
-        check("…with no niche chosen", page.input_value("#f-niche") == "" and page.text_content("[data-niche-value]") == "انتخاب کنید")
+        check("…and an empty niche", page.input_value("#f-niche") == "")
         ctx.close()
 
         ctx, page = fresh(browser)
@@ -428,10 +426,11 @@ def main():
         page.wait_for_selector("[data-view=done]:not([hidden])", timeout=6000)
         form = {k: v[0] for k, v in parse_qs(seen.get("body") or "", keep_blank_values=True).items()}
         check("POSTs a simple urlencoded body (no CORS preflight)", seen.get("method") == "POST" and seen.get("type", "").startswith("application/x-www-form-urlencoded"), seen.get("type"))
-        want = {"first_name": "سارا", "last_name": "رضایی", "business_name": "کافه نور", "niche": "food", "niche_label": "کافه و رستوران",
+        want = {"first_name": "سارا", "last_name": "رضایی", "business_name": "کافه نور", "niche": "کافه و رستوران",
                 "city": "تبریز", "phone": "09141234567", "email": "sara@example.com"}
         check("sends every answer, phone normalised", all(form.get(k) == v for k, v in want.items()), {k: form.get(k) for k in want})
         check("sends when and from where", form.get("submitted_at", "").endswith("Z") and form.get("page", "").startswith("http"))
+        check("no leftover picker keys are sent", "niche_label" not in form and "niche_other" not in form, sorted(form))
         check("confirmation claims the send once it really happened", page.text_content("#done-title") == "درخواستتان ثبت شد")
         check("the receiver's reference is shown", "WTE-7F3K" in page.text_content(".summary"))
         check("no preview caveat on a real send", page.is_hidden("[data-done-demo]"))
@@ -457,8 +456,8 @@ def main():
 
         print("Delivery: Google Form")
         ctx, page = fresh(browser)
-        fields = {"first_name": "entry.101", "last_name": "entry.102", "business_name": "entry.103", "niche_label": "entry.104",
-                  "niche_other": "entry.105", "city": "entry.106", "phone": "entry.107", "email": "entry.108"}
+        fields = {"first_name": "entry.101", "last_name": "entry.102", "business_name": "entry.103", "niche": "entry.104",
+                  "city": "entry.106", "phone": "entry.107", "email": "entry.108"}
         with_config(page, {"mode": "google-form", "googleForm": {"action": "https://forms.test/d/e/X/formResponse", "fields": fields}})
         got = {}
 
@@ -499,10 +498,11 @@ def main():
             ctx.close()
             print(f"  shots → {out}")
 
+        passed = sum(results)
+        # The verdict goes out before the browser closes: system Chrome can stall in close() after a
+        # long run, and a stuck teardown must never hide the result.
+        print(f"\n{passed}/{len(results)} checks passed", flush=True)
         browser.close()
-
-    passed = sum(results)
-    print(f"\n{passed}/{len(results)} checks passed")
     sys.exit(0 if passed == len(results) else 1)
 
 

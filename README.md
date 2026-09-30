@@ -4,7 +4,7 @@ A one-page Persian (RTL) form for businesses that want to join Went To Event. Ho
 
 - **Live:** https://ilyatabrizi.github.io/wte-join/
 - **Local:** `python3 serve.py` → http://localhost:8251
-- **Checks:** `python3 e2e.py [url]` runs 146 checks through system Chrome. Add `--shots` to refresh `docs/shots/`.
+- **Checks:** `python3 e2e.py [url]` runs 143 checks through system Chrome. Add `--shots` to refresh `docs/shots/`.
 
 ## What it asks
 
@@ -12,7 +12,7 @@ A one-page Persian (RTL) form for businesses that want to join Went To Event. Ho
 |---|---|---|
 | نام / نام خانوادگی | yes | letters only, at least 2 |
 | نام کسب‌وکار | yes | |
-| حوزهٔ فعالیت | yes | one native picker: 10 niches taken from the app's own event categories, plus «سایر», which opens a row to type in |
+| حوزهٔ فعالیت | yes | typed, never chosen: free text, at least 2 letters, no list and no suggestions |
 | شهر | yes | free text; suggests Iranian cities (آ/ا, ی/ي and ک/ك are treated as the same letter) |
 | شمارهٔ تماس | yes | Iranian mobile or landline, or any `+` international number. Persian digits are accepted and stored as Latin |
 | ایمیل | **no** | validated only if filled; offers a fix for a mistyped domain (gmial.com → gmail.com) |
@@ -28,7 +28,7 @@ To make it live, choose one:
 - **`endpoint`**: posts `application/x-www-form-urlencoded` to your own receiver, which should reply `{ "ok": true, "reference": "…" }` with `Access-Control-Allow-Origin: https://ilyatabrizi.github.io`. This is the most reliable option for visitors in Iran if the receiver runs on an Iranian host.
 - **`google-form`**: posts to a Google Form's `formResponse` URL. Map each key to its `entry.NNNN` id.
 
-Keys sent: `first_name last_name business_name niche niche_label niche_other city phone email submitted_at page elapsed_ms`.
+Keys sent: `first_name last_name business_name niche city phone email submitted_at page elapsed_ms`. `niche` is exactly what the person typed, with extra spaces tidied.
 
 Once it is live, remove `<meta name="robots" content="noindex, nofollow">` from `index.html` and bump the `?v=` on the CSS/JS links.
 
@@ -42,9 +42,8 @@ Once it is live, remove `<meta name="robots" content="noindex, nofollow">` from 
   to the right. `e2e.py` measures this on pixels at 10 widths.
 - The form uses iOS inset-grouped rows: label on the leading edge, value next to it, hairlines
   inset from the leading edge. Sections are «دربارهٔ شما», «کسب‌وکار» and «راه ارتباط».
-- Niche is **one native picker**. The select lies invisibly over the whole row, so iOS opens its own
-  wheel and a Mac its own menu; the row shows the chosen value and an up-down chevron. Choosing
-  «سایر» opens one more row for it.
+- Niche is **typed, not chosen** (2026-09-29, Ilya's call): a plain text row like the others, with
+  no picker, no suggestions and no browser autocomplete.
 - Glass is used only on the chrome: two floating capsules (brand, and a progress ring counting the six
   required answers) and a scroll edge that softens the page as it passes beneath them. No glass sits
   under a transformed, filtered or translucent ancestor; `e2e.py` checks this.

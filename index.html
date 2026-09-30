@@ -32,16 +32,15 @@
         imagesrcset="assets/brand/logo-420.webp 420w, assets/brand/logo-600.webp 600w, assets/brand/logo-900.webp 900w, assets/brand/logo-1338.webp 1338w"
         imagesizes="(min-width: 720px) 272px, 227px">
   <script>document.documentElement.className = "js";</script>
-  <link rel="stylesheet" href="css/main.css?v=6">
+  <link rel="stylesheet" href="css/main.css?v=7">
   <script src="js/config.js?v=1" defer></script>
-  <script src="js/main.js?v=6" defer></script>
+  <script src="js/main.js?v=7" defer></script>
 </head>
 <body>
   <a class="skip" href="#join">رفتن به فرم</a>
 
   <!-- Lucide (ISC) on a 24 grid, the set Went To Event's app already uses. -->
   <svg class="sprite" aria-hidden="true" focusable="false">
-    <symbol id="i-updown" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   </svg>
 
@@ -105,37 +104,10 @@
                 <input id="f-business" name="business_name" type="text" autocomplete="organization" required aria-required="true" maxlength="80" placeholder="نام برند یا مجموعه" enterkeyhint="next" aria-describedby="business_name-msg">
                 <p class="msg" id="business_name-msg" aria-live="polite"><span></span></p>
               </div>
-              <!-- A native picker: iOS opens its own wheel, a Mac its own menu. -->
-              <div class="row row--pick" data-name="niche">
+              <div class="row" data-name="niche">
                 <label for="f-niche">حوزهٔ فعالیت</label>
-                <div class="pick">
-                  <span class="pick__value is-empty" data-niche-value aria-hidden="true">انتخاب کنید</span>
-                  <svg class="pick__icon" aria-hidden="true"><use href="#i-updown"/></svg>
-                  <select id="f-niche" name="niche" required aria-required="true" aria-describedby="niche-msg">
-                    <option value="" selected disabled hidden>انتخاب کنید</option>
-                    <option value="music">موسیقی و کنسرت</option>
-                    <option value="sport">ورزش و تندرستی</option>
-                    <option value="travel">سفر و طبیعت‌گردی</option>
-                    <option value="food">کافه و رستوران</option>
-                    <option value="art">هنر و نمایشگاه</option>
-                    <option value="stage">تئاتر و سینما</option>
-                    <option value="learning">آموزش و کارگاه</option>
-                    <option value="conference">همایش و سمینار</option>
-                    <option value="leisure">تفریح و سرگرمی</option>
-                    <option value="retail">بازارچه و فروشگاه</option>
-                    <option value="other">سایر</option>
-                  </select>
-                </div>
+                <input id="f-niche" name="niche" type="text" autocomplete="off" required aria-required="true" maxlength="60" placeholder="مثلاً کافه یا باشگاه" enterkeyhint="next" aria-describedby="niche-msg">
                 <p class="msg" id="niche-msg" aria-live="polite"><span></span></p>
-              </div>
-              <div class="reveal" data-other hidden>
-                <div class="reveal__in">
-                  <div class="row" data-name="niche_other">
-                    <label for="f-other">کدام حوزه؟</label>
-                    <input id="f-other" name="niche_other" type="text" maxlength="60" placeholder="مثلاً باغ‌تالار" enterkeyhint="next" aria-describedby="niche_other-msg">
-                    <p class="msg" id="niche_other-msg" aria-live="polite"><span></span></p>
-                  </div>
-                </div>
               </div>
               <div class="row" data-name="city">
                 <label for="f-city">شهر</label>

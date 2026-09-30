@@ -1,5 +1,5 @@
 /* Went To Event — business sign-up.
- * One form, seven answers, six of them required. Validation is quiet while someone types and
+ * One form, seven typed answers, six of them required. Validation is quiet while someone types and
  * speaks up when they leave a field or press the button; an error clears the moment it is fixed.
  * Delivery lives in send() and is chosen in js/config.js — nothing else knows where data goes.
  */
@@ -24,26 +24,17 @@
   const progressBtn = $('[data-progress]');
   const progressText = $('[data-progress-text]');
   const ringFill = $('.ring__fill');
-  const otherWrap = $('[data-other]');
   const suggestBox = $('#city-suggest');
   const emailHint = $('#email-hint');
 
   const inputs = {
     first_name: $('#f-first'), last_name: $('#f-last'), business_name: $('#f-business'),
-    niche_other: $('#f-other'), city: $('#f-city'), phone: $('#f-phone'), email: $('#f-email'),
+    niche: $('#f-niche'), city: $('#f-city'), phone: $('#f-phone'), email: $('#f-email'),
   };
-  const nicheSel = $('#f-niche');
-  const nicheShown = $('[data-niche-value]');
   const REQUIRED = ['first_name', 'last_name', 'business_name', 'niche', 'city', 'phone'];
-  const ORDER = ['first_name', 'last_name', 'business_name', 'niche', 'niche_other', 'city', 'phone', 'email'];
+  const ORDER = ['first_name', 'last_name', 'business_name', 'niche', 'city', 'phone', 'email'];
   const RING = 2 * Math.PI * 9.5;
-  const DRAFT = 'wte-join:draft:v1';
-
-  const NICHES = {
-    music: 'موسیقی و کنسرت', sport: 'ورزش و تندرستی', travel: 'سفر و طبیعت‌گردی', food: 'کافه و رستوران',
-    art: 'هنر و نمایشگاه', stage: 'تئاتر و سینما', learning: 'آموزش و کارگاه', conference: 'همایش و سمینار',
-    leisure: 'تفریح و سرگرمی', retail: 'بازارچه و فروشگاه', other: 'سایر',
-  };
+  const DRAFT = 'wte-join:draft:v2';               // v1 stored the niche as a picker key
 
   // Suggestions only — any city can be typed. Ordered roughly by size, so ties favour the likelier one.
   const CITIES = ('تهران،مشهد،اصفهان،کرج،شیراز،تبریز،قم،اهواز،کرمانشاه،ارومیه،رشت،زاهدان،همدان،کرمان،یزد،اردبیل،' +
@@ -116,7 +107,6 @@
   // ── Rules ─────────────────────────────────────────────────────────────────
   const LETTERS = /^[\p{L}\p{M}\s\u200c'’.\-]+$/u;
   const countLetters = (s) => (s.match(/\p{L}/gu) || []).length;
-  const nicheValue = () => nicheSel.value || '';
 
   const rules = {
     first_name(v) {
@@ -136,11 +126,9 @@
       if (v.replace(/[\s\u200c]/g, '').length < 2) return 'نام کسب‌وکار دست‌کم دو حرف دارد.';
       return '';
     },
-    niche() { return nicheValue() ? '' : 'یکی از حوزه‌ها را انتخاب کنید.'; },
-    niche_other(v) {
-      if (nicheValue() !== 'other') return '';
-      if (!v) return 'حوزهٔ فعالیت‌تان را بنویسید.';
-      if (v.replace(/[\s\u200c]/g, '').length < 2) return 'دست‌کم دو حرف بنویسید.';
+    niche(v) {
+      if (!v) return 'حوزهٔ فعالیت را بنویسید.';
+      if (countLetters(v) < 2) return 'حوزهٔ فعالیت دست‌کم دو حرف دارد.';
       return '';
     },
     city(v) {
@@ -159,7 +147,7 @@
     },
   };
 
-  const valueOf = (name) => (name === 'niche' ? nicheValue() : tidy(inputs[name].value));
+  const valueOf = (name) => tidy(inputs[name].value);
   const cellOf = (name) => $(`[data-name="${name}"]`);
   const shown = new Set();        // cells whose verdict the reader has been shown
   let attempted = false;
@@ -171,7 +159,7 @@
     const bad = !!message;
     cell.classList.toggle('is-invalid', bad);
     if (msg.textContent !== message) msg.textContent = message;
-    (name === 'niche' ? nicheSel : inputs[name]).setAttribute('aria-invalid', String(bad));
+    inputs[name].setAttribute('aria-invalid', String(bad));
   }
 
   function check(name, reveal) {
@@ -191,7 +179,7 @@
 
   // ── Progress ──────────────────────────────────────────────────────────────
   function progress() {
-    const done = REQUIRED.filter((n) => !rules[n](valueOf(n)) && (n !== 'niche' || !rules.niche_other(valueOf('niche_other')))).length;
+    const done = REQUIRED.filter((n) => !rules[n](valueOf(n))).length;
     const all = done === REQUIRED.length;
     ringFill.style.strokeDashoffset = String(RING * (1 - done / REQUIRED.length));
     progressBtn.toggleAttribute('data-complete', all);
@@ -206,14 +194,12 @@
   function firstIncomplete() {
     return ORDER.find((n) => {
       if (n === 'email') return !!rules.email(valueOf('email'));
-      if (n === 'niche_other') return !!rules.niche_other(valueOf('niche_other'));
       return REQUIRED.includes(n) && !!rules[n](valueOf(n));
     });
   }
 
   function focusField(name, { center = true } = {}) {
-    const el = name === 'niche' ? nicheSel : inputs[name];
-    el.focus({ preventScroll: true });
+    inputs[name].focus({ preventScroll: true });
     cellOf(name).scrollIntoView({ behavior: reduce.matches ? 'auto' : 'smooth', block: center ? 'center' : 'nearest' });
   }
 
@@ -235,7 +221,7 @@
   function saveDraft() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      const d = { niche: nicheValue() };
+      const d = {};
       Object.keys(inputs).forEach((k) => { d[k] = inputs[k].value; });
       if (Object.values(d).some(Boolean)) store.set(d); else store.clear();
     }, 250);
@@ -244,37 +230,7 @@
     const d = store.get();
     if (!d || typeof d !== 'object') return;
     Object.keys(inputs).forEach((k) => { if (typeof d[k] === 'string') inputs[k].value = d[k].slice(0, inputs[k].maxLength > 0 ? inputs[k].maxLength : 200); });
-    if (typeof d.niche === 'string' && NICHES[d.niche]) nicheSel.value = d.niche;
-    syncNiche(false);
   }
-
-  // ── Niche: one native picker; the row shows its value ─────────────────────
-  function syncNiche(animate = true) {
-    const v = nicheValue();
-    nicheShown.textContent = v ? NICHES[v] : 'انتخاب کنید';
-    nicheShown.classList.toggle('is-empty', !v);
-    const isOther = v === 'other';
-    if (isOther && otherWrap.hidden) {
-      otherWrap.hidden = false;
-      if (animate && !reduce.matches) { void otherWrap.offsetHeight; }
-      requestAnimationFrame(() => otherWrap.classList.add('is-open'));
-      inputs.niche_other.required = true; inputs.niche_other.setAttribute('aria-required', 'true');
-    } else if (!isOther && !otherWrap.hidden) {
-      otherWrap.classList.remove('is-open');
-      inputs.niche_other.required = false; inputs.niche_other.removeAttribute('aria-required');
-      shown.delete('niche_other'); paint('niche_other', '');
-      const hide = () => { if (nicheValue() !== 'other') otherWrap.hidden = true; };
-      if (reduce.matches || !animate) hide(); else setTimeout(hide, 330);
-    }
-  }
-  nicheSel.addEventListener('change', () => {
-    syncNiche();
-    check('niche', true);                                  // a choice was made: show its verdict
-    hideAlert();
-    if (nicheValue() === 'other') setTimeout(() => inputs.niche_other.focus({ preventScroll: false }), reduce.matches ? 0 : 140);
-    progress(); saveDraft();
-  });
-  nicheSel.addEventListener('blur', () => { if (attempted) check('niche', true); });
 
   // ── City suggestions ──────────────────────────────────────────────────────
   function cityMatches(q) {
@@ -381,10 +337,7 @@
         suggestBox.firstElementChild.click();                  // Enter takes the first suggestion
         return;
       }
-      const from = ORDER.indexOf(name);
-      const next = ORDER.slice(from + 1).find((n) => n === 'niche'
-        ? !nicheValue()
-        : n === 'niche_other' ? !otherWrap.hidden : true);
+      const next = ORDER[ORDER.indexOf(name) + 1];
       if (next) focusField(next, { center: false });
     });
   });
@@ -440,15 +393,12 @@
   function announce(text) { announcer.textContent = ''; setTimeout(() => { announcer.textContent = text; }, 60); }
 
   function payload() {
-    const niche = nicheValue();
     const phone = parsePhone(inputs.phone.value);
     return {
       first_name: tidy(inputs.first_name.value),
       last_name: tidy(inputs.last_name.value),
       business_name: tidy(inputs.business_name.value),
-      niche,
-      niche_label: NICHES[niche] || '',
-      niche_other: niche === 'other' ? tidy(inputs.niche_other.value) : '',
+      niche: tidy(inputs.niche.value),
       city: tidy(inputs.city.value),
       phone: phone.value,
       email: inputs.email.value.trim(),
@@ -473,7 +423,7 @@
     hideAlert();
     suggestBox.hidden = true;
 
-    const names = ['first_name', 'last_name', 'business_name', 'niche', 'niche_other', 'city', 'phone', 'email'];
+    const names = ORDER;
     const bad = names.filter((n) => !check(n, true));
     progress();
     if (bad.length) {
@@ -520,7 +470,7 @@
     sum.replaceChildren(
       row('نام', `${data.first_name} ${data.last_name}`),
       row('کسب‌وکار', data.business_name),
-      row('حوزهٔ فعالیت', data.niche === 'other' ? data.niche_other : data.niche_label),
+      row('حوزهٔ فعالیت', data.niche),
       row('شهر', data.city),
       row('شمارهٔ تماس', phoneShown, 'ltr'),
       ...(data.email ? [row('ایمیل', data.email, 'lat')] : []),
@@ -537,11 +487,9 @@
 
   // Another business, same person: keep who they are and how to reach them.
   $('[data-again]').addEventListener('click', () => {
-    ['business_name', 'niche_other', 'city'].forEach((k) => { inputs[k].value = ''; });
-    nicheSel.selectedIndex = 0;
-    syncNiche(false);
+    ['business_name', 'niche', 'city'].forEach((k) => { inputs[k].value = ''; });
     shown.clear(); attempted = false;
-    ['first_name', 'last_name', 'business_name', 'niche', 'niche_other', 'city', 'phone', 'email'].forEach((n) => paint(n, ''));
+    ORDER.forEach((n) => paint(n, ''));
     viewDone.hidden = true;
     viewForm.hidden = false;
     progressBtn.hidden = false;
@@ -562,7 +510,6 @@
   restoreDraft();
   // A restored draft shows its verdicts only for what was actually filled in.
   Object.keys(inputs).forEach((n) => { if (inputs[n].value.trim()) check(n, true); });
-  if (nicheValue()) check('niche', true);
   progress();
   document.addEventListener('touchstart', () => {}, { passive: true });   // lets iOS show :active
   window.__wte = { ready: true, live, mode: C.mode };
